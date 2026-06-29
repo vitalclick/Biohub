@@ -40,56 +40,50 @@
 - [ ] **3.3** Confirm the competition data is attached:
   - Right panel → **"Add data"** → search for this competition → add it
   - The data should appear at `/kaggle/input/biohub-cell-tracking-during-development/`
-- [ ] **3.4** Copy the contents of `cell_tracking_solution.ipynb` from this repo into the Kaggle notebook
+- [ ] **3.4** Copy the contents of `strong_start_baseline.ipynb` from this repo into the Kaggle notebook
   - Either paste cell by cell, or use **File → Import Notebook** and upload the `.ipynb` file
+  - This is the recommended baseline — it reads zarr chunks directly via `blosc2` (avoiding zarr-library version issues), uses an anisotropy-aware detector, and includes an explicit division-detection pass
 
 ---
 
 ## Phase 4 – Validate the Notebook Runs (1–2 hours)
 *Run inside Kaggle before submitting.*
 
-- [ ] **4.1** Run the first 3 cells (imports + path checks) and confirm:
-  - `Test dir exists: True`
-  - At least one dataset is found
-- [ ] **4.2** Run `inspect_zarr()` on the first test sample and record:
-  - Exact shape `(T, Z, Y, X)`
-  - dtype (expect `uint16`)
-  - Array path (expect `0/`)
-- [ ] **4.3** Update the zarr loading code if the path differs from what we assumed:
-  - Our code tries keys `['raw', 'data', '0', 'volume', 'images']` — add the correct key if missing
-- [ ] **4.4** Run detection on a **single frame** of one dataset and print the number of detected cells
-  - Aim for a plausible count (tens to hundreds of cells per frame, not 0 or 10,000)
-- [ ] **4.5** If detection returns 0 cells:
-  - Try lowering the `threshold` parameter (e.g., `0.005`) in `detect_cells_log()`
-  - Or switch to `detection_method='watershed'`
-- [ ] **4.6** Run the full pipeline on **one dataset only** and confirm:
-  - Nodes > 0
-  - Edges > 0
+- [ ] **4.1** Run the **CONFIG** cell and confirm `TEST_DIR` resolves to a real path
+  - Output should print something like `TEST_DIR = /kaggle/input/.../test`
+- [ ] **4.2** Run `list_datasets()` / `read_meta()` on the first test sample and record:
+  - Number of test datasets found
+  - Exact shape `(T, Z, Y, X)` and dtype (expect `uint16`)
+- [ ] **4.3** Run `detect()` on a single frame and print the number of detected cells
+  - Aim for a plausible count (hundreds to low thousands per frame, not 0)
+- [ ] **4.4** If detection returns 0 or too few cells, tune in the CONFIG block:
+  - Lower `THRESH_REL` (e.g., 0.30 → 0.15) to detect more/dimmer cells
+  - Lower `MIN_PEAK_DIST` to allow denser cell packing
+- [ ] **4.5** If detection returns too many cells (noise getting picked up):
+  - Raise `THRESH_REL` or `SMOOTH_SIGMA`
+- [ ] **4.6** Run the full pipeline (`process_dataset()` loop) on **one dataset only** and confirm:
+  - Nodes > 0, Edges > 0, some divisions detected
   - No Python errors or crashes
 - [ ] **4.7** Run the full pipeline on **all test datasets**
-  - Monitor runtime — must finish within 12 hours total
-  - If too slow, see Phase 5 (optimisations)
-- [ ] **4.8** Confirm `submission.csv` is written and passes sanity checks (last notebook cell)
+  - The validated reference run took ~50 seconds for 4 datasets — if yours is far slower, something is off (check accelerator settings, profile the `detect()` call)
+- [ ] **4.8** Confirm `submission.csv` is written and passes the built-in sanity-check cell (asserts on columns, dataset coverage, non-negative coords, and no dangling edges)
 
 ---
 
 ## Phase 5 – Speed & Quality Fixes (if needed)
 
-### If runtime is too slow (> 10 hours)
-- [ ] **5.1** Reduce `num_sigma` in LoG detection from 5 to 3
-- [ ] **5.2** Downsample volumes by 2× in Z before detection (cells are anisotropic anyway)
-- [ ] **5.3** Process datasets in parallel using Python `multiprocessing` (careful with RAM)
-- [ ] **5.4** Skip LoG entirely and use watershed-only (faster but potentially less accurate)
+### If runtime is too slow (unlikely — reference run was ~50s for 4 datasets)
+- [ ] **5.1** Increase `XY_DS` (e.g., 4 → 6) for more aggressive downsampling
+- [ ] **5.2** Process datasets in parallel using Python `multiprocessing` (careful with RAM)
 
-### If cell counts look wrong
-- [ ] **5.5** Print the `estimated_number_of_nodes` from the `.geff` metadata of training samples to calibrate expected counts
-- [ ] **5.6** Tune `min_sigma` / `max_sigma` to match the apparent cell size in the volumes
-- [ ] **5.7** Try different `threshold` values (0.005 → 0.05) and compare detected counts vs ground truth count estimate
+### If cell counts look wrong (over/under-prediction penalty)
+- [ ] **5.3** Print the `estimated_number_of_nodes` from the `.geff` metadata of training samples to calibrate expected counts
+- [ ] **5.4** Sweep `MIN_PEAK_DIST` and `THRESH_REL` so your detected node count per frame matches that estimate
+- [ ] **5.5** Toggle `DETECT_DIVISIONS = False` to A/B test whether the division pass helps or hurts your score
 
 ### If you get import errors
-- [ ] **5.8** Add `pip install <package>` calls at the top of the notebook for any missing library
-  - Common issue: `zarr` version — competition uses Zarr v3, ensure `zarr>=2.17` or `zarr>=3.0`
-  - Check with: `import zarr; print(zarr.__version__)`
+- [ ] **5.6** `blosc2` should be preinstalled on Kaggle; if not, add `!pip install -q blosc2` as the first cell
+  - This notebook deliberately avoids the `zarr` package entirely, reading `zarr.json` + raw chunks directly — so zarr v2/v3 mismatches are not a concern here
 
 ---
 
@@ -139,9 +133,9 @@
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `Test dir exists: False` | Data not attached to notebook | Add competition data in right panel |
-| `0 cells detected` | Threshold too high or wrong array path | Lower threshold or fix zarr key |
-| Notebook times out | Too slow per dataset | Reduce sigma steps, skip LoG |
+| `TEST_DIR` resolves to wrong/missing path | Data not attached, or mount path changed | Add competition data in right panel; check the `CANDIDATES` fallback list in the CONFIG cell |
+| `0 cells detected` | `THRESH_REL` too high | Lower `THRESH_REL` in CONFIG (e.g., 0.30 → 0.15) |
+| Too many cells detected (noise) | `THRESH_REL` too low or no smoothing | Raise `THRESH_REL` or `SMOOTH_SIGMA` |
 | Submit button greyed out | Notebook not committed, or internet was ON | Re-commit with internet OFF |
-| CSV validation error | Missing dataset or wrong column types | Check sanity cell output |
-| zarr load error | Zarr v2 vs v3 incompatibility | `pip install "zarr>=3.0"` at top |
+| CSV validation error | Missing dataset or wrong column types | Check the built-in sanity-check assertions in the last code cell |
+| `blosc2` import error | Package missing on the base image | `!pip install -q blosc2` as the very first cell |
