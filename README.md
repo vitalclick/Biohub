@@ -1,5 +1,7 @@
 # Biohub – Cell Tracking During Development (Kaggle 2026)
 
+**Competition:** https://www.kaggle.com/competitions/biohub-cell-tracking-during-development/overview
+
 ## Competition goal
 Detect, track, and link cells across time in 4-D (T×Z×Y×X) fluorescence microscopy data.  
 Reconstruct cell lineages including division events.
