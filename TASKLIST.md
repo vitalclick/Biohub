@@ -40,9 +40,13 @@
 - [ ] **3.3** Confirm the competition data is attached:
   - Right panel → **"Add data"** → search for this competition → add it
   - The data should appear at `/kaggle/input/biohub-cell-tracking-during-development/`
-- [ ] **3.4** Copy the contents of `strong_start_baseline.ipynb` from this repo into the Kaggle notebook
+- [ ] **3.4** Copy the contents of `submission_improved.ipynb` from this repo into the Kaggle notebook
   - Either paste cell by cell, or use **File → Import Notebook** and upload the `.ipynb` file
-  - This is the recommended baseline — it reads zarr chunks directly via `blosc2` (avoiding zarr-library version issues), uses an anisotropy-aware detector, and includes an explicit division-detection pass
+  - This is the recommended notebook: DoG detection + full-res centroid refinement,
+    motion-compensated Hungarian linking, gap closing, and gated division detection.
+    Locally benchmarked at 0.889 vs 0.657 for the public strong baseline on the
+    same synthetic metric harness (`local_eval/`)
+  - (`strong_start_baseline.ipynb` = the public 0.581 notebook, kept as fallback)
 
 ---
 
@@ -104,12 +108,34 @@
 
 ---
 
-## Phase 7 – Record Your Baseline & Plan Next Steps
+## Phase 7 – Calibrate on Real Ground Truth (the biggest lever)
 
-- [ ] **7.1** Screenshot or note your leaderboard score (Edge Jaccard + Division Jaccard)
-- [ ] **7.2** Compare your score to the top of the leaderboard to estimate the gap
-- [ ] **7.3** Check the **Discussion** tab for any public baselines or data insights shared by other participants
-- [ ] **7.4** Identify which metric is weaker (Edge Jaccard vs Division Jaccard) — that's where to focus next
+The score formula is `adjusted_edge_jaccard + 0.1 × division_jaccard` — edge accuracy
+dominates. The defaults in `submission_improved.ipynb` were tuned on synthetic data;
+tuning them on real train ground truth is the highest-value step after the first
+submission.
+
+- [ ] **7.1** Create a SECOND Kaggle notebook from `train_calibration.ipynb`
+  - Settings: **Internet ON** (it pip-installs `zarr>=3`; this notebook is never submitted)
+- [ ] **7.2** Set `N_SAMPLES` (start with 6; raise if runtime allows)
+- [ ] **7.3** Run all cells — it scores ~17 config variants with the real metric
+  against real `.geff` ground truth and prints a ranking
+- [ ] **7.4** Paste the printed best `CFG` into `submission_improved.ipynb`, re-commit, resubmit
+- [ ] **7.5** If several deltas each beat the default, add a combined config to `SWEEP` and re-run
+- [ ] **7.6** Record your leaderboard score after each change (5 submissions/day budget)
+
+## Phase 8 – Next Experiments (beyond calibration)
+
+- [ ] **8.1** Learned detection: Cellpose or StarDist-3D with weights attached as a
+  Kaggle dataset (internet stays OFF; datasets are allowed). Usually the single
+  biggest detection jump; note organizers publish a UNet+transformer reference in
+  `royerlab/kaggle-cell-tracking-competition`
+- [ ] **8.2** Extend gap closing to t→t+3 with two interpolated nodes (guarded by
+  tighter gates); check with the calibration notebook first
+- [ ] **8.3** Compare division recall/precision trade-off on real data
+  (`div_symmetry`, `div_sister_minlen`, `detect_divisions=False` A/B)
+- [ ] **8.4** Check the **Discussion** tab for shared insights; watch for metric
+  edge cases announced by organizers
 
 ---
 
